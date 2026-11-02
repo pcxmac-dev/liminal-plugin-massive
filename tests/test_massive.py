@@ -160,7 +160,7 @@ def test_the_app_loads_it_and_its_headlines_from_this_package_with_its_own_versi
     registry.reload()
     p = provider("massive")
     assert p is not None, dict(registry.errors())
-    assert p.origin == "package: liminal-plugin-massive (liminal_plugin_massive)"
+    assert p.origin in {"package: liminal-plugin-massive (liminal_plugin_massive)", "plugins/liminal-plugin-massive (liminal_plugin_massive)"}  # its package, or its checkout in the workspace\'s plugin directory
     assert p.version == version("liminal-plugin-massive") and p.api == "1.11" and registry.api_refusal(p.api) is None
     assert PLUGIN.version == "" and PLUGIN.settings is settings_of
     news = publishers()["massive-news"]
