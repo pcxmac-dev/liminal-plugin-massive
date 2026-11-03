@@ -1,13 +1,13 @@
 # liminal-plugin-massive
 
-Massive (massive.com, formerly Polygon.io) for [Liminal](https://github.com/pcxmac-dev/liminal):
+Massive (massive.com, formerly Polygon.io) for [Liminal](https://github.com/pcxmac-dev/liminal-app):
 stocks, indices, currencies, crypto and futures on its REST API, one plan per asset class, with
 1-second and minute bars, reference data (exchanges, listings, trade conditions, market holidays)
 and its headlines (a publisher in this plugin, `massive-news`, read every 30 minutes on the same key
 and limits). Its scan finds the stocks plan from what the key may ask for.
 
 A Liminal provider plugin released on its own. The app finds it through the entry point group
-`liminal.providers` and lists it on the Plugins view and in `python -m liminal plugins`
+`liminal.providers` and lists it on the Plugins view and in `liminal plugins`
 as `package: liminal-plugin-massive`, with this package's version.
 
 ## Settings
@@ -30,10 +30,10 @@ settings (plugin API 1.11), read when the app's settings load:
 Into the app's environment, from the app's folder:
 
 ```powershell
-.venv\Scripts\python.exe -m pip install "liminal-plugin-massive @ git+https://github.com/pcxmac-dev/liminal-plugin-massive@v1.4.0"
+.venv\Scripts\python.exe -m pip install "liminal-plugin-massive @ git+https://github.com/pcxmac-dev/liminal-plugin-massive@v1.4.1"
 ```
 
-or with the app's plugins (`pip install -e ".[plugins]"` in liminal). The app loads it on its next
+or with the app's plugins (`pip install -e ".[plugins]"` in liminal-app). The app loads it on its next
 start.
 
 ## Compatibility
@@ -46,7 +46,7 @@ major, or one older than 1.11, leaves it out and says why on the Plugins view.
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install "liminal @ git+https://github.com/pcxmac-dev/liminal@feature/collector"
+.venv\Scripts\python.exe -m pip install "liminal-lib @ git+https://github.com/pcxmac-dev/liminal-lib@main"
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
 .venv\Scripts\python.exe -m pytest -q
 ```

@@ -10,10 +10,10 @@ from types import SimpleNamespace
 import pytest
 
 import liminal_plugin_massive as massive
-from liminal.config import ConfigError, Settings, asset_tier, load_settings
-from liminal.models import ETF
-from liminal.sources import build_source, feed_profiles, markets, provider, publishers, rate_window, registry, supports
-from liminal.symbols import resolve
+from liminal_lib.config import ConfigError, Settings, asset_tier, load_settings
+from liminal_lib.models import ETF
+from liminal_lib.sources import build_source, feed_profiles, markets, provider, publishers, rate_window, registry, supports
+from liminal_lib.symbols import resolve
 from liminal_plugin_massive import (ASSETS, MASSIVE_CLASS_TIERS, PLUGIN, PUBLISHER, TIERS, MassiveSettings, scan,
                                     settings_of, tier_for)
 from liminal_plugin_massive.client import MassiveClient, MassiveSource, asset_class

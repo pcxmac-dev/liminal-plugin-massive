@@ -34,9 +34,9 @@ from dataclasses import dataclass, replace
 from datetime import date
 from typing import Mapping
 
-from liminal.config import ConfigError, Tier, asset_tier
-from liminal.sources.publisher import Feed, Policy, Publisher
-from liminal.sources.registry import (MAIN, Database, KeyVar, MachineLedger, Provider, RateLimiter, Scanned, limiter,
+from liminal_lib.config import ConfigError, Tier, asset_tier
+from liminal_lib.sources.publisher import Feed, Policy, Publisher
+from liminal_lib.sources.registry import (MAIN, Database, KeyVar, MachineLedger, Provider, RateLimiter, Scanned, limiter,
                                       machine_caps, minute_window)
 from .client import BASE_URL, PAGE_LIMIT, MassiveClient, MassiveSource
 
