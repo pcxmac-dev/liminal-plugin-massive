@@ -21,7 +21,7 @@ minutes), on this feed's key and limits, released with it (its version and contr
 Settings (user environment variables; the key is only ever read from the environment):
     MASSIVE_API_KEY   required for any request
     MASSIVE_TIER      free | starter | developer | advanced   (default: free): your Stocks plan; sets
-                      the history the collector reaches back to. The scan (`python -m liminal plan`)
+                      the history the collector reaches back to. The scan (`liminal-charts capabilities massive`)
                       finds it
     MASSIVE_TIER_INDICES / _CURRENCIES / _CRYPTO / _FUTURES   the plan of each other asset class
                       (Massive sells one per class; default: free)
