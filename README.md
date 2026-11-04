@@ -1,6 +1,6 @@
-# liminal-plugin-massive
+# plugin-integrator-massive
 
-Massive (massive.com, formerly Polygon.io) for [Liminal](https://github.com/pcxmac-dev/liminal-app):
+Massive (massive.com, formerly Polygon.io) for [Liminal](https://github.com/pcxmac-dev/liminal-charts):
 stocks, indices, currencies, crypto and futures on its REST API, one plan per asset class, with
 1-second and minute bars, reference data (exchanges, listings, trade conditions, market holidays)
 and its headlines (a publisher in this plugin, `massive-news`, read every 30 minutes on the same key
@@ -9,7 +9,7 @@ and limits). Its scan finds the stocks plan from what the key may ask for.
 A Liminal provider plugin released on its own: a class each on the class contract (plugin API 2.0),
 `MassivePlugin` (its feed, a `FeedPlugin`) and `MassiveHeadlines` (its headlines, a `PublisherPlugin`).
 The app finds it through the entry point group `liminal.providers` and lists it on the Plugins view and
-in `liminal plugins` as `package: liminal-plugin-massive`, with this package's version.
+in `liminal-charts plugins` as `package: plugin-integrator-massive`, with this package's version.
 
 ## Settings
 
@@ -31,15 +31,15 @@ settings (the plugin's `settings` hook), read when the app's settings load:
 Into the app's environment, from the app's folder:
 
 ```powershell
-.venv\Scripts\python.exe -m pip install "liminal-plugin-massive @ git+https://github.com/pcxmac-dev/liminal-plugin-massive@v0.2.0"
+.venv\Scripts\python.exe -m pip install "plugin-integrator-massive @ git+https://github.com/pcxmac-dev/plugin-integrator-massive@v0.2.0"
 ```
 
-or with the app's plugins (`pip install -e ".[plugins]"` in liminal-app). The app loads it on its next
+or with the app's plugins (`pip install -e ".[plugins]"` in liminal-charts). The app loads it on its next
 start.
 
 ## Compatibility
 
-It is written for plugin API 2.0 (`PLUGIN.api`: the class contract of liminal-lib 1.3.0, a plugin an
+It is written for plugin API 2.0 (`PLUGIN.api`: the class contract of liminal-libs 1.3.0, a plugin an
 instance of a `FeedPlugin` or `PublisherPlugin` subclass). An app offering 2.0 or a later 2.x loads it;
 an app of another major leaves it out and says why on the Plugins view.
 
@@ -47,7 +47,7 @@ an app of another major leaves it out and says why on the Plugins view.
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python.exe -m pip install "liminal-lib @ git+https://github.com/pcxmac-dev/liminal-lib@release/0.2.0"
+.venv\Scripts\python.exe -m pip install "liminal-libs @ git+https://github.com/pcxmac-dev/liminal-libs@release/0.2.0"
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
 .venv\Scripts\python.exe -m pytest -q
 ```

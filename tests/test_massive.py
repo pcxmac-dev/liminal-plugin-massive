@@ -10,15 +10,15 @@ from types import SimpleNamespace
 
 import pytest
 
-import liminal_plugin_massive as massive
-from liminal_lib import freshness
-from liminal_lib.config import ConfigError, Settings, asset_tier, load_settings
-from liminal_lib.models import ETF
-from liminal_lib.sources import build_source, feed_profiles, markets, provider, publishers, rate_window, registry, supports
-from liminal_lib.symbols import resolve
-from liminal_plugin_massive import (ASSETS, MASSIVE_CLASS_TIERS, PLUGIN, PUBLISHER, TIERS, MassiveHeadlines, MassivePlugin,
+import plugin_integrator_massive as massive
+from liminal_libs import freshness
+from liminal_libs.config import ConfigError, Settings, asset_tier, load_settings
+from liminal_libs.models import ETF
+from liminal_libs.sources import build_source, feed_profiles, markets, provider, publishers, rate_window, registry, supports
+from liminal_libs.symbols import resolve
+from plugin_integrator_massive import (ASSETS, MASSIVE_CLASS_TIERS, PLUGIN, PUBLISHER, TIERS, MassiveHeadlines, MassivePlugin,
                                     MassiveSettings, tier_for)
-from liminal_plugin_massive.client import MassiveClient, MassiveSource, asset_class
+from plugin_integrator_massive.client import MassiveClient, MassiveSource, asset_class
 
 from .conftest import FakeResponse, FakeSession
 
@@ -162,15 +162,15 @@ def test_the_app_loads_it_and_its_headlines_from_this_package_with_its_own_versi
     registry.reload()
     p = provider("massive")
     assert p is not None, dict(registry.errors())
-    assert p.origin in {"package: liminal-plugin-massive (liminal_plugin_massive)", "plugins/liminal-plugin-massive (liminal_plugin_massive)"}  # its package, or its checkout in the workspace\'s plugin directory
-    assert p.version == version("liminal-plugin-massive") and p.api == "2.0" and registry.api_refusal(p.api) is None
+    assert p.origin in {"package: plugin-integrator-massive (plugin_integrator_massive)", "plugins/plugin-integrator-massive (plugin_integrator_massive)"}  # its package, or its checkout in the workspace\'s plugin directory
+    assert p.version == version("plugin-integrator-massive") and p.api == "2.0" and registry.api_refusal(p.api) is None
     assert PLUGIN.version == "" and PLUGIN.has_settings
     news = publishers()["massive-news"]
     assert (news.origin, news.version, news.api) == (p.origin, p.version, p.api)  # one plugin: released with it
     assert news.part_of == "massive" and news.account == "massive" and news.reads_itself
     assert not [why for where, why in registry.errors() if "massive" in where or "massive" in why]
     row = {r["name"]: r for r in registry.menu()}["massive"]
-    assert (row["version"], row["api"]) == (version("liminal-plugin-massive"), "2.0")
+    assert (row["version"], row["api"]) == (version("plugin-integrator-massive"), "2.0")
     assert registry.plugin_feeds("massive") == ["massive"] and registry.plugin_of("massive") == "massive"
 
 

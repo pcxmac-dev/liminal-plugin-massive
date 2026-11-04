@@ -2,7 +2,7 @@
 futures, one plan per asset class; and its headlines, a publisher in this plugin.
 
 A Liminal plugin released on its own, registered under the entry point group `liminal.providers` as
-`massive`: a class each on the class contract (plugin API 2.0, liminal_lib.sources.plugin): its feed
+`massive`: a class each on the class contract (plugin API 2.0, liminal_libs.sources.plugin): its feed
 `MassivePlugin` (a FeedPlugin: what it declares class attributes, what it does methods; the instance
 PLUGIN) and its headlines `MassiveHeadlines` (a PublisherPlugin; PUBLISHER). Its key, plans and caps
 are its own settings (MassiveSettings, from the variables the app read: the `settings` hook), reached
@@ -36,10 +36,10 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Mapping
 
-from liminal_lib.config import ConfigError, Tier, asset_tier
-from liminal_lib.freshness import Delay
-from liminal_lib.sources.publisher import Feed, Policy, PublisherPlugin
-from liminal_lib.sources.registry import (MAIN, Database, FeedPlugin, KeyVar, MachineLedger, RateLimiter, Scanned, limiter,
+from liminal_libs.config import ConfigError, Tier, asset_tier
+from liminal_libs.freshness import Delay
+from liminal_libs.sources.publisher import Feed, Policy, PublisherPlugin
+from liminal_libs.sources.registry import (MAIN, Database, FeedPlugin, KeyVar, MachineLedger, RateLimiter, Scanned, limiter,
                                           machine_caps, minute_window)
 from .client import BASE_URL, PAGE_LIMIT, MassiveClient, MassiveSource
 

@@ -11,11 +11,11 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
-from liminal_lib.errors import NotEntitled, SourceError
-from liminal_lib.models import Exchange, Instrument, country, instrument_class
-from liminal_lib.sources.registry import RateLimiter  # the limiter the contract's clients take
-from liminal_lib.sources.base import DataSource
-from liminal_lib.sources.http import HttpClient
+from liminal_libs.errors import NotEntitled, SourceError
+from liminal_libs.models import Exchange, Instrument, country, instrument_class
+from liminal_libs.sources.registry import RateLimiter  # the limiter the contract's clients take
+from liminal_libs.sources.base import DataSource
+from liminal_libs.sources.http import HttpClient
 
 TIMESPANS = ("second", "minute", "hour", "day", "week", "month", "quarter", "year")
 PAGE_LIMIT = 50000

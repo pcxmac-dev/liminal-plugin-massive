@@ -2,7 +2,9 @@
 
 ## 0.2.0 (2026-11-03)
 
-A class on plugin API 2.0 (liminal-lib 1.3.0; the user: "all the plugins under liminal should basically
+Renamed `plugin-integrator-massive` (the package `plugin_integrator_massive`; it was `liminal-plugin-massive`) on 2026-11-03: the naming by system (plugins are `plugin-<app>-<name>`), on liminal-libs 1.4.0 (`liminal_libs`, the library renamed with it).
+
+A class on plugin API 2.0 (liminal-libs 1.3.0; the user: "all the plugins under liminal should basically
 follow inheritance/oop paradigm"), versioned 0.2.0 with Liminal's release (every distribution at 0.2.0 on
 a `release/0.2.0` branch). The feed is `MassivePlugin`, a `FeedPlugin` subclass (`PLUGIN`, its
 instance), its headlines `MassiveHeadlines`, a `PublisherPlugin` subclass (`PUBLISHER`): what each
@@ -14,11 +16,11 @@ held for it). Nothing it does changed: the same settings, requests, scan, string
 
 ## 1.4.1 (2026-11-02)
 
-The plugin imports the library as `liminal_lib` and depends on liminal-lib (the app, renamed liminal-app, is no longer needed to run the tests; the user, 2026-11-02: "lets rename the app to liminal-app").
+The plugin imports the library as `liminal_libs` and depends on liminal-libs (the app, renamed liminal-charts, is no longer needed to run the tests; the user, 2026-11-02: "lets rename the app to liminal-charts").
 
 ## 1.4.0 (2026-11-01)
 
-- Released as its own package, `liminal-plugin-massive`, registered under the entry point group
+- Released as its own package, `plugin-integrator-massive`, registered under the entry point group
   `liminal.providers` (its feed and its headlines publisher); its version is the distribution's.
 - Its settings are its own (plugin API 1.11, `Provider.settings`): the key, the plans (`TIERS`, the
   stocks plan and each other class's), `MASSIVE_RPM`, `MASSIVE_BASE_URL` and the request caps, once
