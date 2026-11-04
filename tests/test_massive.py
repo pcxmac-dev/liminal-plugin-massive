@@ -1,5 +1,6 @@
 """Massive's plugin, tested on its own: its client's requests (a fake session answers; nothing is
-sent), its settings and plans, its scan, its headlines, and that the app loads it from this package."""
+sent), its settings and plans, its scan, its headlines, and that the app loads it from this package as
+its classes (plugin API 2.0: MassivePlugin, MassiveHeadlines)."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -10,12 +11,13 @@ from types import SimpleNamespace
 import pytest
 
 import liminal_plugin_massive as massive
+from liminal_lib import freshness
 from liminal_lib.config import ConfigError, Settings, asset_tier, load_settings
 from liminal_lib.models import ETF
 from liminal_lib.sources import build_source, feed_profiles, markets, provider, publishers, rate_window, registry, supports
 from liminal_lib.symbols import resolve
-from liminal_plugin_massive import (ASSETS, MASSIVE_CLASS_TIERS, PLUGIN, PUBLISHER, TIERS, MassiveSettings, scan,
-                                    settings_of, tier_for)
+from liminal_plugin_massive import (ASSETS, MASSIVE_CLASS_TIERS, PLUGIN, PUBLISHER, TIERS, MassiveHeadlines, MassivePlugin,
+                                    MassiveSettings, tier_for)
 from liminal_plugin_massive.client import MassiveClient, MassiveSource, asset_class
 
 from .conftest import FakeResponse, FakeSession
@@ -87,7 +89,7 @@ def test_each_request_is_counted_against_its_asset_class():
     assert asset_class("/v2/aggs/ticker/AAPL/range/1/minute/a/b") == "stock"
 
 
-# -- its settings and plans (plugin API 1.11: its own, read with the app's) ------------------------------
+# -- its settings and plans (its own, the `settings` hook, read with the app's) --------------------------
 def test_its_settings_are_its_own_read_with_the_apps_and_a_bad_value_stops_the_app():
     s = load_settings(env={"MASSIVE_API_KEY": " k-1\n", "MASSIVE_TIER": "starter", "MASSIVE_TIER_FUTURES": "developer",
                            "MASSIVE_MAX_REQUESTS_PER_RUN": "7", "MASSIVE_BASE_URL": "https://proxy.example/"}, env_file=None)
@@ -99,23 +101,23 @@ def test_its_settings_are_its_own_read_with_the_apps_and_a_bad_value_stops_the_a
     assert "k-1" not in repr(own) and "k-1" not in repr(s)  # never printed
     feed = s.for_source("massive")  # the app's settings as this feed sees them: its plans and caps
     assert feed.tier is own.tier and feed.max_requests_per_run == 7 and feed.plugin("massive") is own
-    free = settings_of({})
+    free = PLUGIN.settings({})
     assert free.api_key is None and free.tier == TIERS["free"] and (free.max_requests_per_run, free.max_requests_per_day) == (250, 2000)
-    assert settings_of({"MASSIVE_TIER": "  "}).tier.name == "free"  # set but empty: the default
-    assert settings_of({"MASSIVE_RPM": "0"}).tier.requests_per_minute is None  # 0: unlimited
-    assert settings_of({"MASSIVE_RPM": "12", "MASSIVE_TIER": "advanced"}).tier.requests_per_minute == 12
+    assert PLUGIN.settings({"MASSIVE_TIER": "  "}).tier.name == "free"  # set but empty: the default
+    assert PLUGIN.settings({"MASSIVE_RPM": "0"}).tier.requests_per_minute is None  # 0: unlimited
+    assert PLUGIN.settings({"MASSIVE_RPM": "12", "MASSIVE_TIER": "advanced"}).tier.requests_per_minute == 12
     with pytest.raises(ConfigError, match="MASSIVE_API_KEY"):
         free.require_api_key()
     for bad in ({"MASSIVE_TIER": "platinum"}, {"MASSIVE_TIER_CRYPTO": "gold"}, {"MASSIVE_MAX_REQUESTS_PER_DAY": "-1"},
                 {"MASSIVE_RPM": "five"}):
         with pytest.raises(ConfigError):
-            settings_of(bad)
+            PLUGIN.settings(bad)
         with pytest.raises(ConfigError):
             load_settings(env=bad, env_file=None)  # the app's settings refuse it too, as they load
 
 
 def test_a_plan_per_asset_class_and_the_probe_that_names_the_stocks_plan():
-    tier = settings_of({"MASSIVE_TIER": "advanced", "MASSIVE_TIER_FUTURES": "starter"}).tier
+    tier = PLUGIN.settings({"MASSIVE_TIER": "advanced", "MASSIVE_TIER_FUTURES": "starter"}).tier
     assert asset_tier(tier, "stock") is tier and asset_tier(tier, "future").name == "starter"
     assert asset_tier(tier, "crypto").name == "free"  # the stocks plan does not reach the other classes
     assert tier.history_start == date(2003, 9, 10) and tier.history_years is None  # all of Massive's stock history
@@ -129,7 +131,7 @@ def test_a_plan_per_asset_class_and_the_probe_that_names_the_stocks_plan():
 def test_its_scan_finds_the_stocks_plan_and_leaves_the_other_classes_to_you():
     reach = {"day_3y": True, "day_6y": True, "day_11y": False, "day_21y": False, "second": True, "trades": True,
              "quotes": False}
-    found = scan(SimpleNamespace(plan_reach=lambda ticker: reach))
+    found = PLUGIN.scan(SimpleNamespace(plan_reach=lambda ticker: reach))
     assert found.plan == {"MASSIVE_TIER": "developer"}
     assert found.results[-1] == ("stocks plan: developer", True, "10 years of history")
     assert found.results[0] == ("stock daily bars 3 years back (Starter and up)", True, "")
@@ -152,7 +154,7 @@ def test_it_builds_its_client_on_its_own_key_plans_and_caps():
     with pytest.raises(ConfigError, match="MASSIVE_API_KEY"):
         build_source("massive", load_settings(env={}, env_file=None))
     with pytest.raises(ConfigError, match="Massive settings"):
-        massive.build(Settings(db_path=Path("x.db")), 1)  # settings made directly: none of its own
+        PLUGIN.build(Settings(db_path=Path("x.db")), 1)  # settings made directly: none of its own
 
 
 # -- the app loads it from this package --------------------------------------------------------------------
@@ -161,15 +163,38 @@ def test_the_app_loads_it_and_its_headlines_from_this_package_with_its_own_versi
     p = provider("massive")
     assert p is not None, dict(registry.errors())
     assert p.origin in {"package: liminal-plugin-massive (liminal_plugin_massive)", "plugins/liminal-plugin-massive (liminal_plugin_massive)"}  # its package, or its checkout in the workspace\'s plugin directory
-    assert p.version == version("liminal-plugin-massive") and p.api == "1.11" and registry.api_refusal(p.api) is None
-    assert PLUGIN.version == "" and PLUGIN.settings is settings_of
+    assert p.version == version("liminal-plugin-massive") and p.api == "2.0" and registry.api_refusal(p.api) is None
+    assert PLUGIN.version == "" and PLUGIN.has_settings
     news = publishers()["massive-news"]
     assert (news.origin, news.version, news.api) == (p.origin, p.version, p.api)  # one plugin: released with it
-    assert news.part_of == "massive" and news.account == "massive" and news.read is massive.read_headlines
+    assert news.part_of == "massive" and news.account == "massive" and news.reads_itself
     assert not [why for where, why in registry.errors() if "massive" in where or "massive" in why]
     row = {r["name"]: r for r in registry.menu()}["massive"]
-    assert (row["version"], row["api"]) == (version("liminal-plugin-massive"), "1.11")
+    assert (row["version"], row["api"]) == (version("liminal-plugin-massive"), "2.0")
     assert registry.plugin_feeds("massive") == ["massive"] and registry.plugin_of("massive") == "massive"
+
+
+def test_it_is_a_class_on_plugin_api_2_0_and_the_app_loads_it_as_one():
+    assert isinstance(PLUGIN, MassivePlugin) and isinstance(PUBLISHER, MassiveHeadlines)
+    assert PLUGIN.api == "2.0" == PUBLISHER.api and not PLUGIN.is_record and not PUBLISHER.is_record
+    assert PLUGIN.has_scan and PLUGIN.has_settings and PLUGIN.gives("view") and PLUGIN.gives("build")
+    assert PLUGIN.gives("has_keys") and PLUGIN.gives("serves") and PLUGIN.gives("markets") and PLUGIN.gives("plan_resolutions")
+    assert not PLUGIN.gives("rate") and not PLUGIN.gives("carries") and not PLUGIN.gives("reporter")  # the contract's defaults
+    assert PUBLISHER.reads_itself and not PUBLISHER.has_calendar and not PUBLISHER.has_moments and not PUBLISHER.has_settings
+    assert PLUGIN.settings_of({}) == PLUGIN.settings({}) and PUBLISHER.settings_of({}) is None
+    # its plans' publication delays, the library's rows for Massive, declared by the feed (2.0)
+    assert set(PLUGIN.delays) == set(TIERS) and PLUGIN.hours == {}
+    registry.reload()
+    assert freshness.plan_delay(TIERS["free"], "stock").kind == "eod" and freshness.plan_delay(TIERS["free"], "fx").kind == "utc_day"
+    assert freshness.plan_delay(TIERS["starter"], "stock").lag == timedelta(minutes=15)
+    assert freshness.plan_delay(TIERS["advanced"], "crypto").describe() == "real time"
+    assert freshness.plan_delay(TIERS["developer"], "future").lag == timedelta(hours=8)
+    assert freshness.DELAYS.declare(PLUGIN) is False  # declared already, the same rows: nothing changes
+    # the registry loads them as the classes: a copy each (its origin and version set), the same type
+    p, news = registry.providers()["massive"], registry.publishers()["massive-news"]
+    assert type(p) is MassivePlugin and type(news) is MassiveHeadlines and p is not PLUGIN and p.api == "2.0"
+    assert p.has_scan and p.has_settings and news.reads_itself and p.with_(scan=None).has_scan is False and PLUGIN.has_scan
+    assert repr(PLUGIN) == "<MassivePlugin 'massive': built in>" and repr(p).startswith("<MassivePlugin 'massive': ")
 
 
 def test_it_keeps_the_facts_it_had_built_in():
@@ -188,7 +213,7 @@ def test_it_keeps_the_facts_it_had_built_in():
     assert p.bulk_resolution == {"stock": "second", "future": "minute"}
     assert p.plan_resolutions(TIERS["free"], "stock") == ("day", "minute")
     assert p.plan_resolutions(TIERS["starter"], "stock") == ("day", "minute", "second")
-    assert p.plan_resolutions(settings_of({"MASSIVE_TIER": "starter"}).tier, "crypto") == ("day", "minute")  # crypto: still free
+    assert p.plan_resolutions(PLUGIN.settings({"MASSIVE_TIER": "starter"}).tier, "crypto") == ("day", "minute")  # crypto: still free
     assert PUBLISHER.feeds[0].every_minutes == 30 and PUBLISHER.policy.per_day == 60 and PUBLISHER.databases[0].shared
 
 
@@ -197,19 +222,19 @@ def test_its_headlines_are_read_on_its_key_once_a_read_and_counted_on_its_day(mo
              "url": "https://x/1", "tickers": ["AAPL"]}]
     asked, built, counted, kept = [], [], [], {}
     fake = SimpleNamespace(client=SimpleNamespace(on_request=None), news=lambda since, limit: asked.append((since, limit)) or rows)
-    monkeypatch.setattr(massive, "build",
-                        lambda settings, budget, max_retries=4: built.append((settings.tier.name, budget, max_retries)) or fake)
+    monkeypatch.setattr(massive.MassivePlugin, "build",
+                        lambda self, settings, budget, max_retries=4: built.append((settings.tier.name, budget, max_retries)) or fake)
     now = datetime(2026, 10, 24, 12, tzinfo=timezone.utc)
     store = SimpleNamespace(latest_news_ms=lambda feed: None, save_news=lambda feed, items: len(list(items)),
                             kv_set=lambda k, v: kept.__setitem__(k, v),
                             count_request=lambda feed, now=None: counted.append((feed, now)))
     ctx = SimpleNamespace(settings=load_settings(env={"MASSIVE_API_KEY": "k", "MASSIVE_TIER": "starter"}, env_file=None),
                           store=store, now=now, count=lambda n: counted.append(n))
-    assert massive.read_headlines(ctx) == 1
+    assert massive.PUBLISHER.read(ctx) == 1
     assert built == [("starter", 1, 0)]  # its own view of the settings, a budget of one, never retried here
     assert asked == [(now - timedelta(days=massive.NEWS_DAYS), 100)]  # the first read reaches two days back
     fake.client.on_request(1)
     assert counted == [("massive", now), 1] and kept == {"news:massive": now.isoformat()}
     store.latest_news_ms = lambda feed: 1_761_000_000_000  # from then on: since the newest kept
-    massive.read_headlines(ctx)
+    massive.PUBLISHER.read(ctx)
     assert asked[-1] == (datetime.fromtimestamp(1_761_000_000, timezone.utc), 100)

@@ -1,13 +1,15 @@
 """Massive (massive.com, formerly Polygon.io) for Liminal: stocks, indices, currencies, crypto and
 futures, one plan per asset class; and its headlines, a publisher in this plugin.
 
-A Liminal plugin released on its own (liminal.sources.registry: Provider), registered under the entry
-point group `liminal.providers` as `massive`. Its key, plans and caps are its own settings
-(MassiveSettings, from the variables the app read: Provider.settings, plugin API 1.11), reached with
-`settings.plugin("massive")`; its view of the app's settings (Settings.for_source("massive")) carries
-its plan and caps. It relies on plugin API 1.11 and nothing of the app outside the contract
+A Liminal plugin released on its own, registered under the entry point group `liminal.providers` as
+`massive`: a class each on the class contract (plugin API 2.0, liminal_lib.sources.plugin): its feed
+`MassivePlugin` (a FeedPlugin: what it declares class attributes, what it does methods; the instance
+PLUGIN) and its headlines `MassiveHeadlines` (a PublisherPlugin; PUBLISHER). Its key, plans and caps
+are its own settings (MassiveSettings, from the variables the app read: the `settings` hook), reached
+with `settings.plugin("massive")`; its view of the app's settings (Settings.for_source("massive"))
+carries its plan and caps. It relies on plugin API 2.0 and nothing of the app outside the contract
 (docs/ARCHITECTURE.md in liminal: "Providers are plugins"); its version is this distribution's
-(pyproject.toml), so the records' versions are left empty.
+(pyproject.toml), so the classes' versions are left empty.
 
 Its scan finds the stocks plan from what the key may ask for (MassiveSource.plan_reach) and sets
 MASSIVE_TIER where you have not. The other classes' plans are not probed (PLAN_NOTE).
@@ -31,13 +33,14 @@ Settings (user environment variables; the key is only ever read from the environ
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Mapping
 
 from liminal_lib.config import ConfigError, Tier, asset_tier
-from liminal_lib.sources.publisher import Feed, Policy, Publisher
-from liminal_lib.sources.registry import (MAIN, Database, KeyVar, MachineLedger, Provider, RateLimiter, Scanned, limiter,
-                                      machine_caps, minute_window)
+from liminal_lib.freshness import Delay
+from liminal_lib.sources.publisher import Feed, Policy, PublisherPlugin
+from liminal_lib.sources.registry import (MAIN, Database, FeedPlugin, KeyVar, MachineLedger, RateLimiter, Scanned, limiter,
+                                          machine_caps, minute_window)
 from .client import BASE_URL, PAGE_LIMIT, MassiveClient, MassiveSource
 
 ASSETS = ("stock", "index", "fx", "crypto", "future")  # its asset classes, each on a plan of its own
@@ -116,34 +119,6 @@ def _int(variables: Mapping[str, str], name: str) -> int | None:
     return value
 
 
-def settings_of(variables: Mapping[str, str]) -> MassiveSettings:
-    """Provider.settings (plugin API 1.11): the plugin's settings from every variable the app read;
-    a value it refuses is a ConfigError, which stops the app as any setting's does."""
-    tier_name = (variables.get("MASSIVE_TIER") or "").strip().lower() or "free"  # set but empty: the default
-    if tier_name not in TIERS:
-        raise ConfigError(f"Unknown MASSIVE_TIER {tier_name!r}; choose one of {', '.join(TIERS)}")
-    tier = TIERS[tier_name]
-    rpm = _int(variables, "MASSIVE_RPM")
-    if rpm is not None:
-        tier = replace(tier, requests_per_minute=rpm or None)
-    classes = []
-    for asset, var in MASSIVE_CLASS_TIERS.items():
-        name = (variables.get(var) or "free").strip().lower()
-        if name not in TIERS:
-            raise ConfigError(f"Unknown {var} {name!r}; choose one of {', '.join(TIERS)}")
-        if name != tier.name:
-            classes.append((asset, TIERS[name]))
-    tier = replace(tier, by_asset=tuple(classes))
-    per_run = _int(variables, "MASSIVE_MAX_REQUESTS_PER_RUN")
-    per_day = _int(variables, "MASSIVE_MAX_REQUESTS_PER_DAY")
-    return MassiveSettings(
-        api_key=(variables.get(KEY) or "").strip() or None,  # spaces and line breaks around a pasted key taken off
-        tier=tier, base_url=(variables.get("MASSIVE_BASE_URL") or "").rstrip("/"),
-        max_requests_per_run=250 if per_run is None else per_run,
-        max_requests_per_day=2000 if per_day is None else per_day,
-    )
-
-
 def _own(settings) -> MassiveSettings:
     m = settings.plugin("massive")
     if m is None:
@@ -151,99 +126,162 @@ def _own(settings) -> MassiveSettings:
     return m
 
 
-def view(base):
-    """The app's settings as this feed sees them: its plans (every asset class's) and its caps."""
-    m = base.plugin("massive")
-    if m is None:
-        return base
-    return replace(base, tier=m.tier, max_requests_per_run=m.max_requests_per_run,
-                   max_requests_per_day=m.max_requests_per_day, origin=base)
+class MassivePlugin(FeedPlugin):
+    """Massive's feed: its plans (one per asset class), its client on its own key and caps, its scan
+    of the stocks plan, and its own settings (plugin API 2.0: a FeedPlugin subclass; the record it
+    was until 1.4.1 became this class, a field an attribute, a callback a method)."""
 
-
-def build(settings, request_budget, max_retries: int = 4):
-    m = _own(settings)
-    key = m.require_api_key()
-    client = MassiveClient(
-        key,
-        base_url=m.base_url or BASE_URL,  # MASSIVE_BASE_URL, else its own
-        rate_limiter=limiter("massive", settings, key),
-        request_budget=request_budget,
-        max_retries=max_retries,
-    )
-    # Asset classes on another plan keep that plan's rate (the free plan: 5 a minute per class),
-    # with the same margin as the feed's own window.
-    client.class_limiters = {}
-    for a, t in m.tier.by_asset:
-        client.class_limiters[a] = RateLimiter(t.requests_per_minute, minute_window(t.requests_per_minute))
-        client.class_limiters[a].share(MachineLedger(f"massive:{a}", key))
-    return MassiveSource(machine_caps(client, "massive", settings, key))
-
-
-def scan(source) -> Scanned:
-    """The stocks plan the key has (seven small requests, AAPL's): daily bars 3, 6, 11 and 21 years
-    back, then the last week's 1-second bars, trades and quotes."""
-    reach = source.plan_reach("AAPL")
-    found = tier_for(reach)
-    rows = [(REACH.get(k, k), ok, "") for k, ok in reach.items()]
-    years = TIERS[found].history_years
-    rows.append((f"stocks plan: {found}", True, f"{years} years of history" if years else "all of Massive's history"))
-    return Scanned(tuple(rows), {"MASSIVE_TIER": found})
-
-
-def has_keys(settings) -> bool:
-    m = settings.plugin("massive")
-    return bool(m and m.api_key)
-
-
-PLUGIN = Provider(
-    api="1.11",  # the contract it needs (its own settings; sources.http; its headlines' database); its version: the distribution's
-    name="massive", title="Massive", build=build, assets=frozenset(ASSETS), order=0,
-    about="stocks, indices, currencies, crypto and futures: 1-second and minute bars, reference data, news",
-    keys=(KeyVar(KEY),), signup="massive.com: your dashboard's API keys",
-    plan_vars=("MASSIVE_TIER", *MASSIVE_CLASS_TIERS.values(), "MASSIVE_MAX_REQUESTS_PER_RUN",
-               "MASSIVE_MAX_REQUESTS_PER_DAY"),
-    plan_choices={v: tuple(TIERS) for v in ("MASSIVE_TIER", *MASSIVE_CLASS_TIERS.values())},
-    plan_note=PLAN_NOTE, scan=scan,
-    kind="consolidated", venue_notes={"crypto": "consolidated across exchanges"},
+    api = "2.0"  # the contract it is written for (the classes; its own settings; its headlines' database); its version: the distribution's
+    name = "massive"
+    title = "Massive"
+    about = "stocks, indices, currencies, crypto and futures: 1-second and minute bars, reference data, news"
+    order = 0
+    assets = frozenset(ASSETS)
+    keys = (KeyVar(KEY),)
+    signup = "massive.com: your dashboard's API keys"
+    plan_vars = ("MASSIVE_TIER", *MASSIVE_CLASS_TIERS.values(), "MASSIVE_MAX_REQUESTS_PER_RUN",
+                 "MASSIVE_MAX_REQUESTS_PER_DAY")
+    plan_choices = {v: tuple(TIERS) for v in ("MASSIVE_TIER", *MASSIVE_CLASS_TIERS.values())}
+    plan_note = PLAN_NOTE
+    kind = "consolidated"
+    venue_notes = {"crypto": "consolidated across exchanges"}
     # every stock's year of 1-second bars after its minute history (the user, 2026-10-28: "all 7,800");
     # futures at minutes
-    bulk_resolution={"stock": "second", "future": "minute"},
-    per_request={"day": PAGE_LIMIT, "minute": PAGE_LIMIT, "second": PAGE_LIMIT},
-    # 1-second bars on a paid plan of the asset class (the free plan: day and minute bars, 2 years)
-    plan_resolutions=lambda tier, asset: ("day", "minute") if asset_tier(tier, asset).name == "free"
-    else ("day", "minute", "second"),
-    settings=settings_of, view=view, has_keys=has_keys,
-    serves=lambda s: frozenset(ASSETS) if has_keys(s) else None,  # not set up at all without its key
-    markets=lambda s: {"stock": "sip", "index": "index", "fx": "otc", "crypto": "consolidated", "future": "cme"},
-)
+    bulk_resolution = {"stock": "second", "future": "minute"}
+    per_request = {"day": PAGE_LIMIT, "minute": PAGE_LIMIT, "second": PAGE_LIMIT}
+    # When each plan publishes (the rows the library's freshness.PLAN_DELAYS held for Massive, declared
+    # by the feed itself since 2.0). Observed on Massive, Oct 2026: the free plan's stocks and indices
+    # at the end of the day (a session's minute bars appear overnight), its currencies and crypto
+    # through the end of the previous UTC day; futures (Basic) 8 hours delayed; the paid stock plans 15
+    # minutes delayed (Starter, Developer) or real time (Advanced).
+    delays = {
+        "free": {"stock": Delay("eod"), "index": Delay("eod"), "fx": Delay("utc_day"), "crypto": Delay("utc_day"),
+                 "future": Delay("delay", timedelta(hours=8))},
+        "starter": {"stock": Delay("delay", timedelta(minutes=15)), "index": Delay("delay", timedelta(minutes=15)),
+                    "fx": Delay("delay", timedelta(minutes=15)), "crypto": Delay("delay", timedelta(minutes=15)),
+                    "future": Delay("delay", timedelta(hours=8))},
+        "developer": {"stock": Delay("delay", timedelta(minutes=15)), "index": Delay("delay", timedelta(minutes=15)),
+                      "fx": Delay("delay", timedelta(minutes=15)), "crypto": Delay("delay", timedelta(minutes=15)),
+                      "future": Delay("delay", timedelta(hours=8))},
+        "advanced": {"stock": Delay("delay"), "index": Delay("delay"), "fx": Delay("delay"), "crypto": Delay("delay"),
+                     "future": Delay("delay", timedelta(hours=8))},
+    }
+
+    def settings(self, variables: Mapping[str, str]) -> MassiveSettings:
+        """The plugin's settings from every variable the app read (the `settings` hook); a value it
+        refuses is a ConfigError, which stops the app as any setting's does."""
+        tier_name = (variables.get("MASSIVE_TIER") or "").strip().lower() or "free"  # set but empty: the default
+        if tier_name not in TIERS:
+            raise ConfigError(f"Unknown MASSIVE_TIER {tier_name!r}; choose one of {', '.join(TIERS)}")
+        tier = TIERS[tier_name]
+        rpm = _int(variables, "MASSIVE_RPM")
+        if rpm is not None:
+            tier = replace(tier, requests_per_minute=rpm or None)
+        classes = []
+        for asset, var in MASSIVE_CLASS_TIERS.items():
+            name = (variables.get(var) or "free").strip().lower()
+            if name not in TIERS:
+                raise ConfigError(f"Unknown {var} {name!r}; choose one of {', '.join(TIERS)}")
+            if name != tier.name:
+                classes.append((asset, TIERS[name]))
+        tier = replace(tier, by_asset=tuple(classes))
+        per_run = _int(variables, "MASSIVE_MAX_REQUESTS_PER_RUN")
+        per_day = _int(variables, "MASSIVE_MAX_REQUESTS_PER_DAY")
+        return MassiveSettings(
+            api_key=(variables.get(KEY) or "").strip() or None,  # spaces and line breaks around a pasted key taken off
+            tier=tier, base_url=(variables.get("MASSIVE_BASE_URL") or "").rstrip("/"),
+            max_requests_per_run=250 if per_run is None else per_run,
+            max_requests_per_day=2000 if per_day is None else per_day,
+        )
+
+    def view(self, base):
+        """The app's settings as this feed sees them: its plans (every asset class's) and its caps."""
+        m = base.plugin("massive")
+        if m is None:
+            return base
+        return replace(base, tier=m.tier, max_requests_per_run=m.max_requests_per_run,
+                       max_requests_per_day=m.max_requests_per_day, origin=base)
+
+    def build(self, settings, request_budget, max_retries: int = 4):
+        m = _own(settings)
+        key = m.require_api_key()
+        client = MassiveClient(
+            key,
+            base_url=m.base_url or BASE_URL,  # MASSIVE_BASE_URL, else its own
+            rate_limiter=limiter("massive", settings, key),
+            request_budget=request_budget,
+            max_retries=max_retries,
+        )
+        # Asset classes on another plan keep that plan's rate (the free plan: 5 a minute per class),
+        # with the same margin as the feed's own window.
+        client.class_limiters = {}
+        for a, t in m.tier.by_asset:
+            client.class_limiters[a] = RateLimiter(t.requests_per_minute, minute_window(t.requests_per_minute))
+            client.class_limiters[a].share(MachineLedger(f"massive:{a}", key))
+        return MassiveSource(machine_caps(client, "massive", settings, key))
+
+    def scan(self, source) -> Scanned:
+        """The stocks plan the key has (seven small requests, AAPL's): daily bars 3, 6, 11 and 21 years
+        back, then the last week's 1-second bars, trades and quotes."""
+        reach = source.plan_reach("AAPL")
+        found = tier_for(reach)
+        rows = [(REACH.get(k, k), ok, "") for k, ok in reach.items()]
+        years = TIERS[found].history_years
+        rows.append((f"stocks plan: {found}", True, f"{years} years of history" if years else "all of Massive's history"))
+        return Scanned(tuple(rows), {"MASSIVE_TIER": found})
+
+    def has_keys(self, settings) -> bool:
+        m = settings.plugin("massive")
+        return bool(m and m.api_key)
+
+    def serves(self, settings):
+        return frozenset(ASSETS) if self.has_keys(settings) else None  # not set up at all without its key
+
+    def markets(self, settings):
+        return {"stock": "sip", "index": "index", "fx": "otc", "crypto": "consolidated", "future": "cme"}
+
+    def plan_resolutions(self, tier, asset):
+        # 1-second bars on a paid plan of the asset class (the free plan: day and minute bars, 2 years)
+        return ("day", "minute") if asset_tier(tier, asset).name == "free" else ("day", "minute", "second")
+
+
+PLUGIN = MassivePlugin()
 
 NEWS_DAYS = 2  # the first read reaches this far back
 
 
-def read_headlines(ctx) -> int:
-    """Massive's newest headlines (one request, on Massive's limits: its rate window, daily cap and
-    kills), into the main database's news for the News view and the globe's ticker. Returns how many.
-    Never retried here: a 429 is the account's to answer (RateLimited kills it), anything else the
-    reader's to ask again on its schedule (with a budget of one, a retry only failed again)."""
-    from datetime import datetime, timedelta, timezone
+class MassiveHeadlines(PublisherPlugin):
+    """Massive's headlines, a publisher in this plugin: read by itself (`read`) on the feed's key and
+    limits, into the main database's news."""
 
-    source = build(ctx.settings.for_source("massive"), 1, max_retries=0)
-    source.client.on_request = lambda n: (ctx.store.count_request("massive", now=ctx.now), ctx.count(1))
-    newest = ctx.store.latest_news_ms("massive")
-    since = datetime.fromtimestamp(newest / 1000, timezone.utc) if newest else ctx.now - timedelta(days=NEWS_DAYS)
-    n = ctx.store.save_news("massive", source.news(since, 100))
-    ctx.store.kv_set("news:massive", ctx.now.isoformat())  # the Fetcher's "Headlines" row reads when
-    return n
+    api = MassivePlugin.api  # one plugin: Massive's release and contract (its version: the distribution's)
+    name = "massive-news"
+    title = "Massive headlines"
+    about = "news headlines for the News view and the globe's ticker, on Massive's key and limits"
+    order = 300
+    kind = "vendor"
+    account = "massive"
+    part_of = "massive"
+    feeds = (Feed("massive-news", "Massive", "Headlines", f"{BASE_URL}/v2/reference/news", "headlines",
+                  every_minutes=30, moments=False),)
+    policy = Policy(min_minutes=30, per_day=60, terms="your Massive plan's terms; one request a read",
+                    terms_url="https://massive.com/terms")
+    databases = (Database(MAIN, "Massive headlines: the news", shared=True),)  # `read` saves them there
+
+    def read(self, ctx) -> int:
+        """Massive's newest headlines (one request, on Massive's limits: its rate window, daily cap and
+        kills), into the main database's news for the News view and the globe's ticker. Returns how many.
+        Never retried here: a 429 is the account's to answer (RateLimited kills it), anything else the
+        reader's to ask again on its schedule (with a budget of one, a retry only failed again)."""
+        from datetime import datetime, timedelta, timezone
+
+        source = PLUGIN.build(ctx.settings.for_source("massive"), 1, max_retries=0)
+        source.client.on_request = lambda n: (ctx.store.count_request("massive", now=ctx.now), ctx.count(1))
+        newest = ctx.store.latest_news_ms("massive")
+        since = datetime.fromtimestamp(newest / 1000, timezone.utc) if newest else ctx.now - timedelta(days=NEWS_DAYS)
+        n = ctx.store.save_news("massive", source.news(since, 100))
+        ctx.store.kv_set("news:massive", ctx.now.isoformat())  # the Fetcher's "Headlines" row reads when
+        return n
 
 
-PUBLISHER = Publisher(
-    api=PLUGIN.api,  # one plugin: Massive's release and contract (its version: the distribution's)
-    name="massive-news", title="Massive headlines", order=300, kind="vendor", account="massive", part_of="massive",
-    about="news headlines for the News view and the globe's ticker, on Massive's key and limits",
-    feeds=(Feed("massive-news", "Massive", "Headlines", f"{BASE_URL}/v2/reference/news", "headlines",
-                every_minutes=30, moments=False),),
-    policy=Policy(min_minutes=30, per_day=60, terms="your Massive plan's terms; one request a read",
-                  terms_url="https://massive.com/terms"),
-    read=read_headlines,
-    databases=(Database(MAIN, "Massive headlines: the news", shared=True),),  # read_headlines saves them there
-)
+PUBLISHER = MassiveHeadlines()

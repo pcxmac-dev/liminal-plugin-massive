@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 (2026-11-03)
+
+A class on plugin API 2.0 (liminal-lib 1.3.0; the user: "all the plugins under liminal should basically
+follow inheritance/oop paradigm"), versioned 0.2.0 with Liminal's release (every distribution at 0.2.0 on
+a `release/0.2.0` branch). The feed is `MassivePlugin`, a `FeedPlugin` subclass (`PLUGIN`, its
+instance), its headlines `MassiveHeadlines`, a `PublisherPlugin` subclass (`PUBLISHER`): what each
+declares is a class attribute of the record field's name, what it does a method of the callback's
+(`settings`, `view`, `build`, `scan`, `has_keys`, `serves`, `markets`, `plan_resolutions`; the
+headlines' `read`, once `read_headlines`). The feed declares its plans' publication delays itself
+(`MassivePlugin.delays`: the free, Starter, Developer and Advanced rows the library's `freshness.py`
+held for it). Nothing it does changed: the same settings, requests, scan, strings and limits.
+
 ## 1.4.1 (2026-11-02)
 
 The plugin imports the library as `liminal_lib` and depends on liminal-lib (the app, renamed liminal-app, is no longer needed to run the tests; the user, 2026-11-02: "lets rename the app to liminal-app").
